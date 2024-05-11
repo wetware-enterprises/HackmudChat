@@ -6,5 +6,5 @@ namespace HackmudChat.Data;
 
 [Serializable]
 public record GetChatsResponse : ResponseBase {
-	public Dictionary<string, Chat[]>? chats { get; set; }
+	public Dictionary<string, ChatMessage[]>? chats { get; set; }
 }

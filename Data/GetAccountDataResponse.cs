@@ -6,5 +6,5 @@ namespace HackmudChat.Data;
 
 [Serializable]
 public record GetAccountDataResponse : ResponseBase {
-	public Dictionary<string, User>? users { get; set; }
+	public Dictionary<string, ChatUser>? users { get; set; }
 }

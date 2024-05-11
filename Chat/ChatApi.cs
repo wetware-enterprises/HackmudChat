@@ -1,17 +1,22 @@
-﻿using System.Text.Json;
+﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Net.Http.Headers;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 using HackmudChat.Data;
-using HackmudChat.Impl;
+using HackmudChat.Chat.Impl;
 using HackmudChat.Utility;
 
-namespace HackmudChat;
+namespace HackmudChat.Chat;
 
 public class ChatApi : IChatApi {
 	private const string BaseAddress = "https://www.hackmud.com";
 	
 	private readonly HttpClient _http;
+	
+	private readonly JsonSerializerOptions _options = new() {
+		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+	};
 
 	public ChatApi() {
 		this._http = new HttpClient { BaseAddress = new Uri(BaseAddress) };
@@ -47,8 +52,8 @@ public class ChatApi : IChatApi {
 	public async Task<GetChatsResponse> GetChats(
 		string token,
 		string[] usernames,
-		float? before = null,
-		float? after = null
+		double? before = null,
+		double? after = null
 	) {
 		if (before == null && after == null)
 			throw new Exception("Before *or* after must be specified when polling. Please refer to the chat API documentation: https://www.hackmud.com/forums/general_discussion/chat_api_documentation");
@@ -73,18 +78,18 @@ public class ChatApi : IChatApi {
 		return await this.GetChats(
 			token,
 			usernames,
-			TimeUtils.ConvertToRuby(before),
-			TimeUtils.ConvertToRuby(after)
+			before: TimeUtils.ConvertToRuby(before),
+			after: TimeUtils.ConvertToRuby(after)
 		);
 	}
 
-	public async Task<GetChatsResponse> GetChatsBefore(string token, string[] usernames, float before)
+	public async Task<GetChatsResponse> GetChatsBefore(string token, string[] usernames, double before)
 		=> await this.GetChats(token, usernames, before: before);
 	
 	public async Task<GetChatsResponse> GetChatsBefore(string token, string[] usernames, DateTime before)
 		=> await this.GetChats(token, usernames, before: before);
 	
-	public async Task<GetChatsResponse> GetChatsAfter(string token, string[] usernames, float after)
+	public async Task<GetChatsResponse> GetChatsAfter(string token, string[] usernames, double after)
 		=> await this.GetChats(token, usernames, after: after);
 	
 	public async Task<GetChatsResponse> GetChatsAfter(string token, string[] usernames, DateTime after)
@@ -94,7 +99,7 @@ public class ChatApi : IChatApi {
 	
 	private const string CreateChatEndpoint = "/mobile/create_chat.json";
 
-	public async Task<ResponseBase> CreateChatChannel(string token, string username, string channel, string msg) {
+	public async Task<ResponseBase> SendChannel(string token, string username, string channel, string msg) {
 		return await this.CallEndpointAsync<ResponseBase>(
 			CreateChatEndpoint,
 			new CreateChatRequest {
@@ -106,7 +111,7 @@ public class ChatApi : IChatApi {
 		);
 	}
 	
-	public async Task<ResponseBase> CreateChatTell(string token, string username, string tell, string msg) {
+	public async Task<ResponseBase> SendTell(string token, string username, string tell, string msg) {
 		return await this.CallEndpointAsync<ResponseBase>(
 			CreateChatEndpoint,
 			new CreateChatRequest {
@@ -121,9 +126,8 @@ public class ChatApi : IChatApi {
 	// Request handler
 	
 	private async Task<T> CallEndpointAsync<T>(string endpoint, object content) where T : ResponseBase {
-		Console.WriteLine(JsonSerializer.Serialize(content));
 		var uri = new Uri(endpoint, UriKind.Relative);
-		var result = await this._http.PostAsJsonAsync(uri, content);
+		var result = await this._http.PostAsJsonAsync(uri, content, this._options);
 		var response = await result.Content.ReadFromJsonAsync<T>();
 		return response!;
 	}
