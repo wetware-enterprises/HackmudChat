@@ -2,7 +2,7 @@
 
 namespace HackmudChat.Chat.Impl;
 
-public interface IChatClient {
+public interface IChatClient : IDisposable {
 	public bool IsAuthed { get; }
 	public Task<string> ConnectPass(string pass);
 	public Task ConnectToken(string token);
@@ -16,4 +16,6 @@ public interface IChatClient {
 
 	public Task SendChannel(string username, string channel, string msg);
 	public Task SendTell(string username, string tell, string msg);
+
+	public void Reset();
 }

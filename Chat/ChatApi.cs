@@ -9,7 +9,7 @@ using HackmudChat.Utility;
 
 namespace HackmudChat.Chat;
 
-public class ChatApi : IChatApi {
+public class ChatApi : IChatApi, IDisposable {
 	private const string BaseAddress = "https://www.hackmud.com";
 	
 	private readonly HttpClient _http;
@@ -130,5 +130,11 @@ public class ChatApi : IChatApi {
 		var result = await this._http.PostAsJsonAsync(uri, content, this._options);
 		var response = await result.Content.ReadFromJsonAsync<T>();
 		return response!;
+	}
+	
+	// Disposal
+
+	public void Dispose() {
+		this._http.Dispose();
 	}
 }

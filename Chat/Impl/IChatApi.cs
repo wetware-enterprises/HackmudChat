@@ -2,7 +2,7 @@
 
 namespace HackmudChat.Chat.Impl;
 
-public interface IChatApi {
+public interface IChatApi : IDisposable {
 	public Task<GetTokenResponse> GetToken(string pass);
 	public Task<GetAccountDataResponse> GetAccountData(string token);
 	

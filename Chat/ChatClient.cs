@@ -107,10 +107,13 @@ public class ChatClient : IChatClient {
 		var chats = new Dictionary<string, List<ChatMessage>>();
 		foreach (var (user, messages) in data.chats) {
 			ids.AddRange(messages.Select(msg => msg.id));
-			
-			var notify = messages
-				.Where(msg => !this._prevIds.Contains(msg.id))
-				.ToList();
+
+			List<ChatMessage> notify;
+			lock (this._prevIds) {
+				notify = messages
+					.Where(msg => !this._prevIds.Contains(msg.id))
+					.ToList();
+			}
 			
 			chats[user] = notify;
 			
@@ -119,10 +122,12 @@ public class ChatClient : IChatClient {
 				.Aggregate(timeMax, Math.Max);
 		}
 		this.OnReceived?.Invoke(this, chats);
-		
-		this._prevIds.Clear();
-		foreach (var id in ids.Distinct())
-			this._prevIds.Add(id);
+
+		lock (this._prevIds) {
+			this._prevIds.Clear();
+			foreach (var id in ids.Distinct())
+				this._prevIds.Add(id);
+		}
 
 		var timeNow = TimeUtils.ConvertToRuby(DateTime.Now);
 		if (timeMax + 300000 < timeNow) timeMax = timeNow;
@@ -175,5 +180,25 @@ public class ChatClient : IChatClient {
 		var result = await this._api.SendTell(this._token, username, tell, msg);
 		if (result.ok != true)
 			throw new Exception(result.msg ?? "Unknown error");
+	}
+	
+	// Disposal
+
+	public void Reset() {
+		this._token = null;
+		this._pollTimer.Stop();
+		lock (this._users)
+			this._users.Clear();
+		lock (this._prevIds)
+			this._prevIds.Clear();
+	}
+	
+	public void Dispose() {
+		try {
+			this.Reset();
+		} finally {
+			this._pollTimer.Dispose();
+			this._api.Dispose();
+		}
 	}
 }
