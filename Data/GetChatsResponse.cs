@@ -3,7 +3,7 @@
 // ReSharper disable InconsistentNaming
 
 [Serializable]
-public record GetChatsResponse {
+public record GetChatsResponse : ResponseBase {
 	public Dictionary<string, Chat[]>? chats { get; set; }
 	
 	[Serializable]
