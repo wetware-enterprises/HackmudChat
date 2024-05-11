@@ -1,6 +1,7 @@
 ﻿using Timer = System.Timers.Timer;
 
 using HackmudChat.Chat.Impl;
+using HackmudChat.Data;
 using HackmudChat.Data.Entities;
 using HackmudChat.Utility;
 
@@ -37,7 +38,7 @@ public class ChatClient : IChatClient {
 		
 		this._pollTimer = new Timer();
 		this._pollTimer.Elapsed += this.Poll;
-		this._pollTimer.Interval = 3000;
+		this._pollTimer.Interval = 2000;
 	}
 	
 	// Authentication
@@ -164,22 +165,34 @@ public class ChatClient : IChatClient {
 	
 	// Chat messages
 
-	public async Task SendChannel(string username, string channel, string msg) {
-		if (this._token == null)
-			throw new Exception(NoAuthError);
-		
-		var result = await this._api.SendTell(this._token, username, channel, msg);
-		if (result.ok != true)
-			throw new Exception(result.msg ?? "Unknown error");
-	}
+	private const int RetryCount = 5;
 
-	public async Task SendTell(string username, string tell, string msg) {
+	public async Task SendChannel(string username, string channel, string msg)
+		=> await this.TrySend(this._api.SendChannel, username, channel, msg);
+
+	public async Task SendTell(string username, string tell, string msg)
+		=> await this.TrySend(this._api.SendTell, username, tell, msg);
+
+	private async Task TrySend(
+		Func<string, string, string, string, Task<ResponseBase>> func,
+		string username,
+		string target,
+		string msg
+	) {
 		if (this._token == null)
 			throw new Exception(NoAuthError);
 		
-		var result = await this._api.SendTell(this._token, username, tell, msg);
-		if (result.ok != true)
-			throw new Exception(result.msg ?? "Unknown error");
+		var i = 0;
+		var trying = true;
+		while (trying) {
+			if (i > 0) await Task.Delay(i * 100);
+			
+			var result = await func(this._token, username, target, msg);
+			if (result.ok) return;
+			
+			trying = ++i < RetryCount && result.msg == "sending messages too fast";
+			if (!trying) throw new Exception(result.msg ?? "Unknown error");
+		}
 	}
 	
 	// Disposal

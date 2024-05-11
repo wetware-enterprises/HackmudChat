@@ -9,29 +9,50 @@ using HackmudChat.Utility;
 
 namespace HackmudChat.Chat;
 
-public class ChatApi : IChatApi, IDisposable {
+public class ChatApi : IChatApi {
 	private const string BaseAddress = "https://www.hackmud.com";
 	
-	private readonly HttpClient _http;
+	private readonly RateLimiter<RateLimit> _rate;
 	
+	private readonly HttpClient _http;
 	private readonly JsonSerializerOptions _options = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
 	public ChatApi() {
+		this._rate = new RateLimiter<RateLimit>(RateLimits);
 		this._http = new HttpClient { BaseAddress = new Uri(BaseAddress) };
 		this._http.DefaultRequestHeaders.Accept.Add(
 			new MediaTypeWithQualityHeaderValue("application/json")
 		);
 	}
 	
+	// Rate limits
+
+	private enum RateLimit {
+		GetToken,
+		AccountData,
+		GetChats,
+		CreateChat
+	}
+
+	private readonly static Dictionary<RateLimit, int> RateLimits = new() {
+		{ RateLimit.GetToken, 100 },
+		{ RateLimit.AccountData, 5000 },
+		{ RateLimit.GetChats, 700 },
+		{ RateLimit.CreateChat, 1000 }
+	};
+	
 	// Endpoint: get_token.json
 	
 	private const string GetTokenEndpoint = "/mobile/get_token.json";
 
 	public async Task<GetTokenResponse> GetToken(string pass) {
-		var body = new GetTokenRequest { pass = pass };
-		return await this.CallEndpointAsync<GetTokenResponse>(GetTokenEndpoint, body);
+		return await this.CallEndpointAsync<GetTokenResponse>(
+			RateLimit.GetToken,
+			GetTokenEndpoint,
+			new GetTokenRequest { pass = pass }
+		);
 	}
 	
 	// Endpoint: account_data.json
@@ -40,6 +61,7 @@ public class ChatApi : IChatApi, IDisposable {
 
 	public async Task<GetAccountDataResponse> GetAccountData(string token) {
 		return await this.CallEndpointAsync<GetAccountDataResponse>(
+			RateLimit.AccountData,
 			AccountDataEndpoint,
 			new AuthedRequestBase { chat_token = token }
 		);
@@ -59,6 +81,7 @@ public class ChatApi : IChatApi, IDisposable {
 			throw new Exception("Before *or* after must be specified when polling. Please refer to the chat API documentation: https://www.hackmud.com/forums/general_discussion/chat_api_documentation");
 		
 		return await this.CallEndpointAsync<GetChatsResponse>(
+			RateLimit.GetChats,
 			ChatsEndpoint,
 			new GetChatsRequest {
 				chat_token = token,
@@ -101,6 +124,7 @@ public class ChatApi : IChatApi, IDisposable {
 
 	public async Task<ResponseBase> SendChannel(string token, string username, string channel, string msg) {
 		return await this.CallEndpointAsync<ResponseBase>(
+			RateLimit.CreateChat,
 			CreateChatEndpoint,
 			new CreateChatRequest {
 				chat_token = token,
@@ -113,6 +137,7 @@ public class ChatApi : IChatApi, IDisposable {
 	
 	public async Task<ResponseBase> SendTell(string token, string username, string tell, string msg) {
 		return await this.CallEndpointAsync<ResponseBase>(
+			RateLimit.CreateChat,
 			CreateChatEndpoint,
 			new CreateChatRequest {
 				chat_token = token,
@@ -125,7 +150,8 @@ public class ChatApi : IChatApi, IDisposable {
 	
 	// Request handler
 	
-	private async Task<T> CallEndpointAsync<T>(string endpoint, object content) where T : ResponseBase {
+	private async Task<T> CallEndpointAsync<T>(RateLimit rate, string endpoint, object content) where T : ResponseBase {
+		using var _ = await this._rate.Wait(rate);
 		var uri = new Uri(endpoint, UriKind.Relative);
 		var result = await this._http.PostAsJsonAsync(uri, content, this._options);
 		var response = await result.Content.ReadFromJsonAsync<T>();
