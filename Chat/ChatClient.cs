@@ -45,24 +45,30 @@ public class ChatClient : IChatClient {
 	
 	public bool IsAuthed { get; private set; }
 
-	public async Task<string> ConnectPass(string pass) {
+	public async Task<string> ConnectPass(string pass)
+		=> await this.ConnectPass(pass, CancellationToken.None);
+
+	public async Task<string> ConnectPass(string pass, CancellationToken cancelToken) {
 		string? token;
 		
 		var getToken = await this._api.GetToken(pass);
 		if (getToken.ok != true || (token = getToken.chat_token) == null)
 			throw new Exception($"Failed to get token: {getToken.msg ?? "Unknown"}");
 
-		await this.ConnectToken(token);
+		await this.ConnectToken(token, cancelToken);
 		return token;
 	}
 
-	public async Task ConnectToken(string token) {
+	public async Task ConnectToken(string token)
+		=> await this.ConnectToken(token, CancellationToken.None);
+
+	public async Task ConnectToken(string token, CancellationToken cancelToken) {
 		this._token = token;
 		
 		if (this.LastPoll == 0.0)
 			this.LastPoll = TimeUtils.ConvertToRuby(DateTime.Now);
 		
-		await this.RefreshAccountData();
+		await this.RefreshAccountData(cancelToken);
 
 		this.IsAuthed = true;
 		this.IsPolling = true;
@@ -146,15 +152,22 @@ public class ChatClient : IChatClient {
 		}
 	}
 
-	public async Task<IReadOnlyDictionary<string, ChatUser>> RefreshAccountData() {
+	public async Task<IReadOnlyDictionary<string, ChatUser>> RefreshAccountData()
+		=> await this.RefreshAccountData(CancellationToken.None);
+
+	public async Task<IReadOnlyDictionary<string, ChatUser>> RefreshAccountData(
+		CancellationToken cancelToken
+	) {
 		if (this._token == null)
 			throw new Exception(NoAuthError);
 
 		this._lastRefresh = DateTime.Now;
 		
-		var data = await this._api.GetAccountData(this._token);
+		var data = await this._api.GetAccountData(this._token, cancelToken);
 		if (data.ok != true || data.users == null)
 			throw new Exception($"Failed to get account data: {data.msg ?? "Unknown"}");
+		
+		cancelToken.ThrowIfCancellationRequested();
 		
 		lock (this._users) {
 			foreach (var (user, channels) in data.users)
@@ -168,31 +181,40 @@ public class ChatClient : IChatClient {
 	private const int RetryCount = 5;
 
 	public async Task SendChannel(string username, string channel, string msg)
-		=> await this.TrySend(this._api.SendChannel, username, channel, msg);
+		=> await this.SendChannel(username, channel, msg, CancellationToken.None);
+
+	public async Task SendChannel(string username, string channel, string msg, CancellationToken cancelToken)
+		=> await this.TrySend(this._api.SendChannel, username, channel, msg, cancelToken);
 
 	public async Task SendTell(string username, string tell, string msg)
-		=> await this.TrySend(this._api.SendTell, username, tell, msg);
+		=> await this.SendTell(username, tell, msg, CancellationToken.None);
+	
+	public async Task SendTell(string username, string tell, string msg, CancellationToken cancelToken)
+		=> await this.TrySend(this._api.SendTell, username, tell, msg, cancelToken);
 
 	private async Task TrySend(
 		Func<string, string, string, string, Task<ResponseBase>> func,
 		string username,
 		string target,
-		string msg
+		string msg,
+		CancellationToken cancelToken
 	) {
 		if (this._token == null)
 			throw new Exception(NoAuthError);
 		
 		var i = 0;
 		var trying = true;
-		while (trying) {
-			if (i > 0) await Task.Delay(i * 100);
+		while (trying && !cancelToken.IsCancellationRequested) {
+			if (i > 0) await Task.Delay(i * 100, cancelToken);
 			
 			var result = await func(this._token, username, target, msg);
-			if (result.ok) return;
+			if (result.ok) break;
 			
 			trying = ++i < RetryCount && result.msg == "sending messages too fast";
 			if (!trying) throw new Exception(result.msg ?? "Unknown error");
 		}
+		
+		cancelToken.ThrowIfCancellationRequested();
 	}
 	
 	// Disposal
